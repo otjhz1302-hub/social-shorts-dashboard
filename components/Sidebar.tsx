@@ -6,6 +6,8 @@ import clsx from 'clsx'
 
 const NAV = [
   { href: '/dashboard',            label: 'Inicio',       icon: '⬡' },
+  { href: '/dashboard/editor',     label: 'Editor Studio', icon: '✂' },
+  { href: '/dashboard/lives',      label: 'Live Radar',   icon: '◉' },
   { href: '/dashboard/queue',      label: 'Cola',         icon: '▣' },
   { href: '/dashboard/published',  label: 'Publicados',   icon: '▤' },
   { href: '/dashboard/analytics',  label: 'Analíticas',   icon: '▦' },
