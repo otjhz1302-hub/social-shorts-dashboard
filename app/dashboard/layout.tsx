@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/Sidebar'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -7,7 +7,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
+  const admin = createAdminClient()
+  const { data: profile } = await admin
     .from('profiles')
     .select('role')
     .eq('id', user.id)
