@@ -3,5 +3,6 @@
 @tailwind utilities;
 
 :root { color-scheme: dark; }
-body { background: #0d0f14; color: #e8eaf0; font-family: system-ui, sans-serif; }
+body { background: #050810; color: #c8d8ff; font-family: system-ui, sans-serif; }
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
