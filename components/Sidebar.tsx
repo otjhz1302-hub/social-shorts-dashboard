@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import clsx from 'clsx'
+import BotPowerButton from '@/components/BotPowerButton'
 
 const NAV = [
   { href: '/dashboard',            label: 'Inicio',       icon: '⬡' },
@@ -53,6 +54,7 @@ export default function Sidebar({ role }: { role: string }) {
       </nav>
 
       <div className="p-3 border-t border-border">
+        {role === 'admin' && <BotPowerButton />}
         <div className="text-xs text-dim mb-2 px-1">
           Rol: <span className={role === 'admin' ? 'text-gold' : 'text-muted'}>{role}</span>
         </div>
