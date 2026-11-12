@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import InviteForm from './InviteForm'
 import UserRow from './UserRow'
+import SearchBudgetAdmin from '@/components/SearchBudgetAdmin'
 
 export default async function UsersPage() {
   const supabase = createClient()
@@ -53,6 +54,8 @@ export default async function UsersPage() {
           </table>
         )}
       </div>
+
+      <SearchBudgetAdmin />
     </div>
   )
 }

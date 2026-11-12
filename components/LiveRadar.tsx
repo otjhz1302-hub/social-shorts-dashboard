@@ -1,11 +1,13 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import SearchNowButton from '@/components/SearchNowButton'
 
-type Spike = { at: string; secs: number; to: number }
+type Spike = { at: string; secs: number; to: number; reason?: string; chat?: number }
+type Point = [string, number, number?]   // [iso, viewers, chat msgs/min]
 type Live = {
   video_id: string; title: string | null; channel: string | null; status: string
-  viewers: number; peak: number; series: [string, number][] | null; spikes: Spike[] | null
+  viewers: number; peak: number; chat_rate?: number | null; series: Point[] | null; spikes: Spike[] | null
   started_at: string; updated_at: string
 }
 type LiveJob = { id: number; source_id: string; stage: string; message: string | null; hook: string | null; updated_at: string }
@@ -44,13 +46,13 @@ function Radar({ size = 34, active = true }: { size?: number; active?: boolean }
   )
 }
 
-function ViewerChart({ series, spikes }: { series: [string, number][]; spikes: Spike[] }) {
+function ViewerChart({ series, spikes }: { series: Point[]; spikes: Spike[] }) {
   const W = 360, H = 80
   if (series.length < 2) {
     return (
       <div style={{ height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#2a4a3a',
         fontFamily: 'monospace', border: '1px dashed #14203a', borderRadius: 8 }}>
-        recolectando audiencia (1 lectura cada 2 min)…
+        recolectando audiencia y chat (1 punto por minuto)…
       </div>
     )
   }
@@ -59,6 +61,8 @@ function ViewerChart({ series, spikes }: { series: [string, number][]; spikes: S
   const x = (i: number) => (i / (series.length - 1)) * W
   const y = (v: number) => H - 8 - ((v - min) / Math.max(max - min, 1)) * (H - 18)
   const line = series.map((p, i) => `${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ')
+  const chatMax = Math.max(...series.map(p => p[2] ?? 0), 1)
+  const chat = series.map((p, i) => `${x(i).toFixed(1)},${(H - 4 - ((p[2] ?? 0) / chatMax) * (H - 14)).toFixed(1)}`).join(' ')
   const times = series.map(p => new Date(p[0]).getTime())
   const marks = spikes.map(s => {
     const t = new Date(s.at).getTime()
@@ -75,6 +79,8 @@ function ViewerChart({ series, spikes }: { series: [string, number][]; spikes: S
         </linearGradient>
       </defs>
       <polygon points={`0,${H} ${line} ${W},${H}`} fill="url(#lr-area)" />
+      <polyline points={chat} fill="none" stroke="#ff44cc" strokeWidth={1.5} strokeDasharray="3 2" opacity={0.8}
+        vectorEffect="non-scaling-stroke" />
       <polyline points={line} fill="none" stroke="#00ff88" strokeWidth={2} vectorEffect="non-scaling-stroke" />
       {marks.map(({ i, s }, k) => (
         <g key={k}>
@@ -128,12 +134,19 @@ function LiveCard({ live, job }: { live: Live; job?: LiveJob }) {
           </div>
         </div>
         <div style={{ marginTop: 12 }}><ViewerChart series={live.series ?? []} spikes={spikes} /></div>
+        <div style={{ display: 'flex', gap: 12, fontSize: 9, color: '#4a5a6a', marginTop: 4 }}>
+          <span><span style={{ color: '#00ff88' }}>━</span> audiencia</span>
+          <span><span style={{ color: '#ff44cc' }}>┅</span> chat {live.chat_rate ?? 0} msg/min</span>
+          <span><span style={{ color: '#ff3366' }}>●</span> momento viral</span>
+        </div>
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 5 }}>
           {spikes.length === 0 ? (
-            <div style={{ fontSize: 10, color: '#2a3a4a' }}>Sin picos aún — se marca un pico con +15% de audiencia entre lecturas.</div>
+            <div style={{ fontSize: 10, color: '#2a3a4a' }}>
+              Sin momentos aún — se dispara con una explosión del chat (×2.5 con reacciones) o +15% de audiencia.
+            </div>
           ) : spikes.map((s, i) => (
             <div key={i} style={{ fontSize: 11, color: '#ff88aa', fontFamily: 'monospace', animation: 'lr-fade .3s' }}>
-              🔥 minuto {Math.floor(s.secs / 60)} → {fmt(s.to)} viewers
+              🔥 min {Math.floor(s.secs / 60)} · {s.reason ?? `${fmt(s.to)} viewers`}
             </div>
           ))}
           {job && (
@@ -184,9 +197,10 @@ export default function LiveRadar() {
             <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: 3, background: 'linear-gradient(90deg,#00ff88,#00aaff)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>📡 LIVE RADAR</div>
             <div style={{ fontSize: 10, color: '#3a4a5a', letterSpacing: 2 }}>
-              AUDIENCIA CADA 2 MIN · +15% = MOMENTO VIRAL · AL TERMINAR EL LIVE EL PICO PASA AL EDITOR
+              CHAT EN TIEMPO REAL + AUDIENCIA · MOMENTO VIRAL → SE CORTA EL ÚLTIMO MINUTO AL INSTANTE Y PASA AL EDITOR
             </div>
           </div>
+          <SearchNowButton />
           {[
             { label: 'Vigilando', value: watching.length, color: '#ff3366' },
             { label: 'Picos detectados', value: totalSpikes, color: '#ffaa00' },

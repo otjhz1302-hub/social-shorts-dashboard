@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import PostingHours from '@/components/PostingHours'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Moment = { start: number; end: number; hook?: string; confidence?: number }
@@ -494,6 +495,8 @@ export default function EditorStudio() {
             </div>
           )}
         </div>
+
+        <PostingHours />
 
         {failed.length > 0 && (
           <div>
