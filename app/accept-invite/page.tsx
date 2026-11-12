@@ -5,15 +5,18 @@ import { useRouter } from 'next/navigation'
 
 export default function AcceptInvitePage() {
   const [password, setPassword] = useState('')
-  const [status, setStatus] = useState<'idle'|'loading'|'done'|'error'>('idle')
+  const [status, setStatus] = useState<'idle'|'loading'|'done'|'error'|'no-session'>('idle')
   const [msg, setMsg] = useState('')
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
-    // Supabase coloca el token en el hash de la URL al aceptar invitación
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) setStatus('no-session')
+    })
     supabase.auth.onAuthStateChange((event) => {
       if (event === 'USER_UPDATED') router.push('/dashboard')
+      if (event === 'SIGNED_IN') setStatus('idle')
     })
   }, [])
 
@@ -24,6 +27,18 @@ export default function AcceptInvitePage() {
     if (error) { setStatus('error'); setMsg(error.message) }
     else { setStatus('done'); setMsg('¡Contraseña establecida! Redirigiendo...') }
   }
+
+  if (status === 'no-session') return (
+    <div className="min-h-screen flex items-center justify-center bg-bg px-4">
+      <div className="w-full max-w-sm text-center">
+        <div className="text-3xl font-bold text-gold mb-4">Social Shorts</div>
+        <div className="bg-surface border border-border rounded-xl p-6">
+          <p className="text-red-400 text-sm mb-2">Sesión no encontrada.</p>
+          <p className="text-muted text-xs">Usa el enlace del email de invitación directamente. El enlace expira después de un uso.</p>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg px-4">
