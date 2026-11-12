@@ -17,6 +17,7 @@ const PLATFORMS_CFG = [
   { key: 'youtube',   label: 'YouTube',   icon: '▶', color: '#ff4444',  bg: '#1a0808' },
   { key: 'instagram', label: 'Instagram', icon: '◈', color: '#ff44cc',  bg: '#1a0815' },
   { key: 'facebook',  label: 'Facebook',  icon: '◉', color: '#4488ff',  bg: '#08101a' },
+  { key: 'tiktok',    label: 'TikTok',    icon: '♪', color: '#00f2ea',  bg: '#081a1a' },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -479,7 +480,7 @@ export default function LiveDashboard({ initialStats }: { initialStats: Stats })
             <div style={{ fontSize: 10, color: '#2a3a4a', letterSpacing: 2, marginBottom: 10 }}>
               ● PLATAFORMAS
             </div>
-            <div style={{ display: 'flex', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
               {PLATFORMS_CFG.map(cfg => (
                 <PlatformCard key={cfg.key} cfg={cfg}
                   stat={platformSt[cfg.key] ?? { total: 0, success: 0, failed: 0, last_upload: null }}
