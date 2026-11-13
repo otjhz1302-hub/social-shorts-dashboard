@@ -7,6 +7,8 @@ import BotPowerButton from '@/components/BotPowerButton'
 
 const NAV = [
   { href: '/dashboard',            label: 'Inicio',       icon: '⬡' },
+  { href: '/dashboard/marketplace', label: 'Cortes',      icon: '✦' },
+  { href: '/dashboard/connections', label: 'Mis redes',   icon: '⚭' },
   { href: '/dashboard/editor',     label: 'Editor Studio', icon: '✂' },
   { href: '/dashboard/lives',      label: 'Live Radar',   icon: '◉' },
   { href: '/dashboard/streamers',  label: 'Streamers',    icon: '♛' },

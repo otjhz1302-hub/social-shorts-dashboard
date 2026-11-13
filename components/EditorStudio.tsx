@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import PostingHours from '@/components/PostingHours'
+import PublishButton from '@/components/PublishButton'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Moment = { start: number; end: number; hook?: string; confidence?: number }
@@ -17,7 +18,9 @@ type Job = {
   seo: Record<string, PlatformSeo> | null; transcript: string | null
   video_url: string | null; cover_url: string | null; frames: Frame[] | null
   published: Record<string, string> | null; created_at: string; updated_at: string
+  user_id: string | null; owner_email: string | null
 }
+type Me = { id: string; admin: boolean; connected: string[] }
 
 const STAGES = [
   { key: 'queued',     label: 'Cola',       icon: '⏳', color: '#5a7a9a' },
@@ -223,6 +226,7 @@ function Stepper({ job }: { job: Job }) {
 
 function Phone({ job, width = 230, hoverPlay = false }: { job: Job; width?: number; hoverPlay?: boolean }) {
   const ref = useRef<HTMLVideoElement>(null)
+  const [muted, setMuted] = useState(true)
   const pct = Math.round((job.progress ?? 0) * 100)
   return (
     <div style={{ width, aspectRatio: '9 / 16', borderRadius: width / 8, border: '3px solid #1e2a40', background: '#000',
@@ -230,8 +234,14 @@ function Phone({ job, width = 230, hoverPlay = false }: { job: Job; width?: numb
       onMouseEnter={() => hoverPlay && ref.current?.play().catch(() => {})}
       onMouseLeave={() => hoverPlay && ref.current?.pause()}>
       {job.video_url ? (
-        <video ref={ref} src={job.video_url} poster={job.cover_url ?? undefined} muted loop playsInline
-          autoPlay={!hoverPlay} preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <>
+          <video ref={ref} src={job.video_url} poster={job.cover_url ?? undefined} muted loop playsInline
+            autoPlay={!hoverPlay} preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+            onClick={e => { const v = e.currentTarget; v.muted = !v.muted; v.play().catch(() => {}); setMuted(v.muted) }} />
+          {/* browsers only autoplay muted: one click turns the sound on */}
+          <div style={{ position: 'absolute', bottom: 10, right: 10, fontSize: 14, padding: '2px 6px', borderRadius: 8,
+            background: '#000a', pointerEvents: 'none' }}>{muted ? '🔇' : '🔊'}</div>
+        </>
       ) : job.cover_url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={job.cover_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -328,7 +338,7 @@ function ActivePanel({ job, live }: { job: Job; live: boolean }) {
   )
 }
 
-function ClipCard({ job }: { job: Job }) {
+function ClipCard({ job, me }: { job: Job; me: Me | null }) {
   const platforms = Object.keys(job.seo ?? {})
   const [tab, setTab] = useState(platforms[0] ?? 'youtube')
   const [open, setOpen] = useState(false)
@@ -346,6 +356,7 @@ function ClipCard({ job }: { job: Job }) {
           <span style={{ fontSize: 10, color: '#4a5a6a', fontFamily: 'monospace' }}>
             {Math.round(job.viral_score ?? 0)} pts · {ago(job.updated_at)}
           </span>
+          {job.owner_email && <span className="es-chip" style={{ margin: 0 }}>👤 {job.owner_email}</span>}
           {Object.entries(published).map(([p, url]) => (
             <a key={p} href={url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: PLATFORM_COLOR[p] ?? '#8fb0d0' }}>↗ {p}</a>
           ))}
@@ -387,6 +398,9 @@ function ClipCard({ job }: { job: Job }) {
         )}
         <button onClick={() => setOpen(o => !o)} style={{ marginTop: 8, fontSize: 10, color: '#00aaff', background: 'none',
           border: 'none', cursor: 'pointer', padding: 0 }}>{open ? '▲ menos' : '▼ descripción completa y transcripción'}</button>
+        {me && job.clip_id && (me.admin || job.user_id === me.id) && (
+          <PublishButton jobId={job.id} published={job.published} connected={me.connected} />
+        )}
       </div>
     </div>
   )
@@ -399,6 +413,19 @@ export default function EditorStudio() {
   const [bot, setBot] = useState<{ task: string; alive: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
+  const [me, setMe] = useState<Me | null>(null)
+
+  useEffect(() => {   // who's looking: admins publish any short, guests their own, with their «Mis redes» accounts
+    const sb = createClient()
+    sb.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const [p, c] = await Promise.all([
+        sb.from('profiles').select('role').eq('id', user.id).maybeSingle(),
+        sb.from('social_connections').select('platform').eq('user_id', user.id),
+      ])
+      setMe({ id: user.id, admin: p.data?.role === 'admin', connected: (c.data ?? []).map((r: { platform: string }) => r.platform) })
+    })
+  }, [])
 
   const poll = useCallback(async () => {
     const sb = createClient()
@@ -491,7 +518,7 @@ export default function EditorStudio() {
             <div className="es-card" style={{ padding: 30, textAlign: 'center', color: '#2a3a4a', fontSize: 12 }}>Aún no hay clips terminados.</div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(440px, 1fr))', gap: 14 }}>
-              {done.slice(0, 12).map(j => <ClipCard key={j.id} job={j} />)}
+              {done.slice(0, 12).map(j => <ClipCard key={j.id} job={j} me={me} />)}
             </div>
           )}
         </div>

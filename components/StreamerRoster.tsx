@@ -4,13 +4,16 @@ import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAx
 import { createClient } from '@/lib/supabase/client'
 
 type Streamer = {
-  id: number; channel_id: string; channel_name: string; avatar_url: string | null; subscribers: number | null
+  id: number; platform: string | null; channel_id: string; channel_name: string; avatar_url: string | null; subscribers: number | null
   score: number | null; tier: string | null; reach: number | null; consistency: number | null
   virality: number | null; effectiveness: number | null; live_days_14: number | null; live_days: string[] | null
   hours_watched: number | null; avg_viewers: number | null; peak_viewers: number | null; spikes_30: number | null
   clips_30: number | null; published_30: number | null; avg_clip_views: number | null
   is_live_now: boolean | null; live_video_id: string | null; last_live_at: string | null; blocked: boolean | null
 }
+
+// Live Radar's ranking of the live (core/radar.py), joined by the live's video id
+type Pot = { viral_potential: number | null; potential: { tier: string; reason: string } | null }
 
 const TIERS = [
   { key: 'elite',       label: 'Élite',          icon: '👑', color: '#ffd400', desc: 'Alto score y constantes: prioridad máxima' },
@@ -62,7 +65,7 @@ function Avatar({ s, size = 44 }: { s: Streamer; size?: number }) {
   )
 }
 
-function StreamerCard({ s, i }: { s: Streamer; i: number }) {
+function StreamerCard({ s, i, pot, rank }: { s: Streamer; i: number; pot?: Pot; rank?: number }) {
   const t = tierOf(s.tier)
   const days = new Set(s.live_days ?? [])
   return (
@@ -73,13 +76,31 @@ function StreamerCard({ s, i }: { s: Streamer; i: number }) {
           <div style={{ fontSize: 13, fontWeight: 700, color: '#e8f0ff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {s.channel_name}
           </div>
-          <div style={{ fontSize: 10, color: '#4a5a6a' }}>{fmt(s.subscribers)} subs · {fmt(s.avg_viewers)} viewers prom.</div>
+          <div style={{ fontSize: 10, color: '#4a5a6a' }}>
+            {s.platform === 'twitch' ? <span style={{ color: '#a970ff' }}>Twitch</span> : `${fmt(s.subscribers)} subs`} · {fmt(s.avg_viewers)} viewers prom.
+            {' · '}<span style={{ color: t.color }}>{t.icon} {t.label}</span>
+          </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'monospace', color: t.color, lineHeight: 1 }}>{Math.round(s.score ?? 0)}</div>
           <div style={{ fontSize: 8, color: '#3a4a5a', letterSpacing: 1 }}>SCORE</div>
         </div>
       </div>
+
+      {rank && (
+        <div style={{ marginTop: 10, padding: '6px 10px', borderRadius: 8, background: '#ff336611', border: '1px solid #ff336633',
+          fontSize: 11, display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
+          <span style={{ fontFamily: 'monospace', fontWeight: 900, color: '#ff3366' }}>#{rank}</span>
+          {pot?.potential ? (
+            <>
+              <span style={{ fontWeight: 800, color: '#ffaa00', whiteSpace: 'nowrap' }}>
+                {pot.potential.tier} {Math.round(pot.viral_potential ?? 0)}
+              </span>
+              <span style={{ color: '#8fb0d0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>▲ {pot.potential.reason}</span>
+            </>
+          ) : <span style={{ color: '#5a7a8a' }}>potencial viral: calculando (Live Radar)…</span>}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', marginTop: 12 }}>
         {METRICS.map(m => {
@@ -117,7 +138,8 @@ function StreamerCard({ s, i }: { s: Streamer; i: number }) {
         <span title="Vistas promedio de nuestros clips">👁 {fmt(s.avg_clip_views)}</span>
         <span title="Horas vigiladas">⏱ {(s.hours_watched ?? 0).toFixed(1)} h</span>
         {s.is_live_now && s.live_video_id && (
-          <a href={`https://www.youtube.com/watch?v=${s.live_video_id}`} target="_blank" rel="noreferrer"
+          <a href={s.platform === 'twitch' ? `https://www.twitch.tv/${s.channel_id}` : `https://www.youtube.com/watch?v=${s.live_video_id}`}
+            target="_blank" rel="noreferrer"
             style={{ color: '#ff3366', marginLeft: 'auto', animation: 'sr-blink 1.4s infinite' }}>● ver live</a>
         )}
       </div>
@@ -129,12 +151,19 @@ export default function StreamerRoster() {
   const [list, setList] = useState<Streamer[]>([])
   const [error, setError] = useState<string | null>(null)
   const [showDropped, setShowDropped] = useState(false)
+  const [pots, setPots] = useState<Record<string, Pot>>({})
 
   const poll = useCallback(async () => {
-    const { data, error } = await createClient().from('streamers').select('*')
+    const sb = createClient()
+    const { data, error } = await sb.from('streamers').select('*')
       .order('score', { ascending: false, nullsFirst: false }).limit(300)
-    if (error) setError(error.message)
-    else { setError(null); setList(data as Streamer[]) }
+    if (error) return setError(error.message)
+    setError(null)
+    setList(data as Streamer[])
+    const ids = (data as Streamer[]).filter(s => s.is_live_now && s.live_video_id).map(s => s.live_video_id!)
+    if (!ids.length) return setPots({})
+    const { data: w } = await sb.from('live_watches').select('video_id,viral_potential,potential').in('video_id', ids)
+    setPots(Object.fromEntries(((w ?? []) as (Pot & { video_id: string })[]).map(r => [r.video_id, r])))
   }, [])
 
   useEffect(() => {
@@ -143,7 +172,13 @@ export default function StreamerRoster() {
     return () => clearInterval(id)
   }, [poll])
 
-  const live = list.filter(s => s.is_live_now)
+  const potOf = (s: Streamer) => (s.live_video_id ? pots[s.live_video_id] : undefined)
+  // on air, most likely to go viral first (Live Radar), then by roster score
+  const live = list.filter(s => s.is_live_now).sort((a, b) =>
+    ((potOf(b)?.viral_potential ?? -1) - (potOf(a)?.viral_potential ?? -1)) || ((b.score ?? 0) - (a.score ?? 0)))
+  // the roster the bot checks every 10 min for a live (everyone not discarded or blocked)
+  const watched = list.filter(s => !s.is_live_now && !s.blocked && s.tier !== 'descartado')
+  const dropped = list.filter(s => !s.is_live_now && (s.blocked || s.tier === 'descartado'))
   const byTier = (k: string) => list.filter(s => (s.tier ?? 'observacion') === k)
   const points = list.filter(s => s.tier !== 'descartado').map(s => ({
     x: Math.round((s.consistency ?? 0) * 100), y: Math.round((s.reach ?? 0) * 100),
@@ -162,8 +197,8 @@ export default function StreamerRoster() {
               ALCANCE 30% · CONSTANCIA 25% · VIRALIDAD 25% · EFECTIVIDAD 20% · SE RECALCULA CADA 6 H CON NUESTROS DATOS
             </div>
           </div>
-          {[{ label: 'En el roster', value: list.length, color: '#00aaff' },
-            { label: 'En vivo ahora', value: live.length, color: '#ff3366' },
+          {[{ label: 'En vivo ahora', value: live.length, color: '#ff3366' },
+            { label: 'Seleccionados', value: watched.length, color: '#00aaff' },
             ...TIERS.slice(0, 2).map(t => ({ label: t.label, value: byTier(t.key).length, color: t.color }))].map(c => (
             <div key={c.label} className="sr-card" style={{ padding: '10px 16px', textAlign: 'center', minWidth: 110 }}>
               <div style={{ fontSize: 24, fontWeight: 900, fontFamily: 'monospace', color: c.color }}>{c.value}</div>
@@ -178,75 +213,82 @@ export default function StreamerRoster() {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(280px,1fr)', gap: 14 }}>
-          <div className="sr-card" style={{ padding: 16 }}>
-            <div className="sr-label" style={{ marginBottom: 8 }}>Mapa de efectividad · constancia vs alcance · tamaño = viralidad</div>
-            <div style={{ height: 300 }}>
-              <ResponsiveContainer>
-                <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 0 }}>
-                  <CartesianGrid stroke="#14203a" />
-                  <XAxis type="number" dataKey="x" name="Constancia" domain={[0, 100]} stroke="#3a4a5a" fontSize={10}
-                    label={{ value: 'Constancia →', position: 'insideBottom', offset: -10, fill: '#3a4a5a', fontSize: 10 }} />
-                  <YAxis type="number" dataKey="y" name="Alcance" domain={[0, 100]} stroke="#3a4a5a" fontSize={10} />
-                  <ZAxis type="number" dataKey="z" range={[40, 440]} />
-                  <Tooltip cursor={{ stroke: '#1e2a40' }} contentStyle={{ background: '#0a1020', border: '1px solid #1a2235', fontSize: 11 }}
-                    formatter={(v, n) => [v as number, n as string]}
-                    labelFormatter={() => ''} />
-                  {TIERS.slice(0, 4).map(t => (
-                    <Scatter key={t.key} name={t.label} data={points.filter(p => p.tier === t.key)} fill={t.color} fillOpacity={0.75} />
-                  ))}
-                </ScatterChart>
-              </ResponsiveContainer>
+        <Section icon="🔴" title="En vivo ahora" color="#ff3366" count={live.length}
+          desc="Ordenados por potencial viral del Live Radar: arriba los que más probabilidad tienen de dar un momento viral">
+          {live.length === 0 ? (
+            <div className="sr-card" style={{ padding: 30, fontSize: 11, color: '#2a3a4a', textAlign: 'center' }}>
+              Nadie del roster está en vivo ahora. El bot revisa cada 10 minutos.
             </div>
-            <div style={{ display: 'flex', gap: 14, justifyContent: 'center', fontSize: 10, color: '#5a7a8a' }}>
-              {TIERS.slice(0, 4).map(t => <span key={t.key}><span style={{ color: t.color }}>●</span> {t.label}</span>)}
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+              {live.map((s, i) => <StreamerCard key={s.channel_id} s={s} i={i} pot={potOf(s)} rank={i + 1} />)}
             </div>
-          </div>
+          )}
+        </Section>
 
-          <div className="sr-card" style={{ padding: 16 }}>
-            <div className="sr-label" style={{ marginBottom: 10 }}>● En vivo ahora ({live.length})</div>
-            {live.length === 0 ? (
-              <div style={{ fontSize: 11, color: '#2a3a4a', padding: '30px 0', textAlign: 'center' }}>
-                Nadie del roster está en vivo. El bot revisa cada 10 minutos.
-              </div>
-            ) : live.map(s => (
-              <div key={s.channel_id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #0e1626' }}>
-                <Avatar s={s} size={34} />
-                <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: '#e8f0ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {s.channel_name}
-                </div>
-                <span style={{ fontSize: 11, fontFamily: 'monospace', color: tierOf(s.tier).color }}>{Math.round(s.score ?? 0)}</span>
-              </div>
-            ))}
+        <Section icon="👁" title="Seleccionados para vigilar" color="#00aaff" count={watched.length}
+          desc="El bot revisa cada 10 minutos si salen en vivo, los mejores primero; en cuanto uno transmite pasa arriba">
+          {watched.length === 0 ? (
+            <div className="sr-card" style={{ padding: 30, fontSize: 11, color: '#2a3a4a', textAlign: 'center' }}>
+              El roster está vacío: el descubrimiento agrega canales cuando encuentra lives del nicho.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+              {watched.map((s, i) => <StreamerCard key={s.channel_id} s={s} i={i} />)}
+            </div>
+          )}
+        </Section>
+
+        {dropped.length > 0 && (
+          <button onClick={() => setShowDropped(v => !v)} style={{ alignSelf: 'flex-start', fontSize: 11, color: '#ff6688',
+            background: 'none', border: '1px solid #ff336633', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
+            {showDropped ? 'Ocultar descartados' : `Ver descartados (${dropped.length})`}
+          </button>
+        )}
+        {showDropped && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+            {dropped.map((s, i) => <StreamerCard key={s.channel_id} s={s} i={i} />)}
+          </div>
+        )}
+
+        <div className="sr-card" style={{ padding: 16 }}>
+          <div className="sr-label" style={{ marginBottom: 8 }}>Mapa de efectividad · constancia vs alcance · tamaño = viralidad</div>
+          <div style={{ height: 300 }}>
+            <ResponsiveContainer>
+              <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 0 }}>
+                <CartesianGrid stroke="#14203a" />
+                <XAxis type="number" dataKey="x" name="Constancia" domain={[0, 100]} stroke="#3a4a5a" fontSize={10}
+                  label={{ value: 'Constancia →', position: 'insideBottom', offset: -10, fill: '#3a4a5a', fontSize: 10 }} />
+                <YAxis type="number" dataKey="y" name="Alcance" domain={[0, 100]} stroke="#3a4a5a" fontSize={10} />
+                <ZAxis type="number" dataKey="z" range={[40, 440]} />
+                <Tooltip cursor={{ stroke: '#1e2a40' }} contentStyle={{ background: '#0a1020', border: '1px solid #1a2235', fontSize: 11 }}
+                  formatter={(v, n) => [v as number, n as string]}
+                  labelFormatter={() => ''} />
+                {TIERS.slice(0, 4).map(t => (
+                  <Scatter key={t.key} name={t.label} data={points.filter(p => p.tier === t.key)} fill={t.color} fillOpacity={0.75} />
+                ))}
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', fontSize: 10, color: '#5a7a8a' }}>
+            {TIERS.slice(0, 4).map(t => <span key={t.key}><span style={{ color: t.color }}>●</span> {t.label}</span>)}
           </div>
         </div>
-
-        {TIERS.filter(t => t.key !== 'descartado' || showDropped).map(t => {
-          const rows = byTier(t.key)
-          if (!rows.length && t.key !== 'elite') return null
-          return (
-            <div key={t.key}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
-                <span style={{ fontSize: 15, fontWeight: 800, color: t.color }}>{t.icon} {t.label}</span>
-                <span style={{ fontSize: 11, color: '#3a4a5a' }}>{rows.length} · {t.desc}</span>
-              </div>
-              {rows.length === 0 ? (
-                <div className="sr-card" style={{ padding: 20, fontSize: 11, color: '#2a3a4a', textAlign: 'center' }}>
-                  Aún nadie llega a élite: se necesitan varios días de datos de constancia y viralidad.
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
-                  {rows.map((s, i) => <StreamerCard key={s.channel_id} s={s} i={i} />)}
-                </div>
-              )}
-            </div>
-          )
-        })}
-        <button onClick={() => setShowDropped(v => !v)} style={{ alignSelf: 'flex-start', fontSize: 11, color: '#ff6688',
-          background: 'none', border: '1px solid #ff336633', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
-          {showDropped ? 'Ocultar descartados' : `Ver descartados (${byTier('descartado').length})`}
-        </button>
       </div>
+    </div>
+  )
+}
+
+function Section({ icon, title, color, count, desc, children }: {
+  icon: string; title: string; color: string; count: number; desc: string; children: React.ReactNode
+}) {
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 15, fontWeight: 800, color }}>{icon} {title} ({count})</span>
+        <span style={{ fontSize: 11, color: '#3a4a5a' }}>{desc}</span>
+      </div>
+      {children}
     </div>
   )
 }
